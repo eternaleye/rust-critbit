@@ -1,0 +1,5 @@
+[package]
+
+name = "critbit"
+version = "0.0.0"
+authors = ["Alex Elsayed <eternaleye@gmail.com>"]
