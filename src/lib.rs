@@ -1,18 +1,23 @@
-use std::num::Bitwise;
+#![feature(box_patterns)]
+#![feature(core)]
+
+use std::num::Int;
+
+use ::CritBit::{Leaf,Internal,Empty};
 
 pub enum CritBit<K,V> {
     Leaf ( K, V ),
-    Internal ( (Box<CritBit<K,V>>, Box<CritBit<K,V>>), K ),
+    Internal ( (Box<CritBit<K,V>>, Box<CritBit<K,V>>), u32 ),
     Empty
 }
 
 #[inline(always)]
-fn bit_at<T: Bitwise + Eq>( value: &T, pos: &T ) -> bool {
-    (*value << *pos).leading_zeros() == ( *value & !*value )
+fn bit_at<T: Int + Eq>( value: &T, pos: &u32 ) -> bool {
+    value.rotate_left(*pos).leading_zeros() == 0
 }
 
-impl<K: Bitwise + Eq, V> Container for CritBit<K, V> {
-    fn len( &self ) -> uint {
+impl<K: Int + Eq, V> CritBit<K, V> {
+    fn len( &self ) -> usize {
         match *self {
             Empty => 0,
             Leaf ( .. ) => 1,
@@ -21,9 +26,7 @@ impl<K: Bitwise + Eq, V> Container for CritBit<K, V> {
             }
         }
     }
-}
 
-impl<K: Bitwise + Eq, V> Map<K,V> for CritBit<K,V> {
     fn find<'a>( &'a self, key: &K ) -> Option<&'a V> {
         match *self {
             Leaf ( ref k, ref v ) if *k == *key =>
@@ -42,15 +45,11 @@ impl<K: Bitwise + Eq, V> Map<K,V> for CritBit<K,V> {
             None      => false
         }
     }
-}
 
-impl<K: Bitwise + Eq, V> Mutable for CritBit<K,V> {
     fn clear( &mut self ) {
         *self = Empty
     }
-}
 
-impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
     fn find_mut<'a>( &'a mut self, key: &K ) -> Option<&'a mut V> {
         match *self {
             Leaf ( ref k, ref mut v ) if *k == *key =>
@@ -82,12 +81,12 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
                     None
                 }
             }
-            Internal ( ( &Empty, kid ), _ ) => {
-                std::mem::replace( self, kid );
+            Internal ( ( box Empty, kid ), _ ) => {
+                std::mem::replace( self, *kid );
                 ret
             },
-            Internal ( ( kid, &Empty ), _ ) => {
-                std::mem::replace( self, kid );
+            Internal ( ( kid, box Empty ), _ ) => {
+                std::mem::replace( self, *kid );
                 ret
             },
             _ => {
@@ -139,10 +138,10 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
 
 #[test]
 fn verify_bit_at() {
-    assert_eq!( bit_at( &1u8, &0u8 ), false );
-    assert_eq!( bit_at( &128u8, &0u8 ), true );
-    assert_eq!( bit_at( &1u8, &7u8 ), true );
-    assert_eq!( bit_at( &128u8, &7u8 ), false );
+    assert_eq!( bit_at( &1u8, &0u32 ), false );
+    assert_eq!( bit_at( &128u8, &0u32 ), true );
+    assert_eq!( bit_at( &1u8, &7u32 ), true );
+    assert_eq!( bit_at( &128u8, &7u32 ), false );
 }
 
 #[test]
@@ -193,7 +192,7 @@ fn leaf_find() {
 #[test]
 fn internal_len() {
     let t : CritBit<u8,()> = Internal (
-        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u32
     );
     assert_eq!( t.len(), 2 );
 }
@@ -201,7 +200,7 @@ fn internal_len() {
 #[test]
 fn internal_contains_key() {
     let t : CritBit<u8,()> = Internal (
-        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u32
     );
     assert_eq!( t.contains_key( &0u8 ), true );
     assert_eq!( t.contains_key( &128u8 ), true );
@@ -211,7 +210,7 @@ fn internal_contains_key() {
 #[test]
 fn internal_find() {
     let t : CritBit<u8,u8> = Internal (
-        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u32
     );
     let val = 1u8;
     assert_eq!( t.find( &0u8 ), Some ( &val ) );
@@ -230,7 +229,7 @@ fn leaf_clear() {
 #[test]
 fn internal_clear() {
     let mut t : CritBit<u8,()> = Internal (
-        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u32
     );
     assert_eq!( t.len(), 2 );
     t.clear();
@@ -265,7 +264,7 @@ fn leaf_find_mut() {
 #[test]
 fn internal_find_mut() {
     let mut t : CritBit<u8,u8> = Internal (
-        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u32
     );
     let val = 7u8;
     {
@@ -311,7 +310,7 @@ fn leaf_swap_new() {
 #[test]
 fn internal_swap_new() {
     let mut t : CritBit<u8,u8> = Internal (
-        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u32
     );
     let oldval = 1u8;
     let val = 7u8;
@@ -325,7 +324,7 @@ fn internal_swap_new() {
 #[test]
 fn internal_swap_exists() {
     let mut t : CritBit<u8,u8> = Internal (
-        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u32
     );
     let val = 7u8;
     assert_eq!( t.swap( 0u8, 7u8 ), Some ( 1u8 ) );
@@ -348,7 +347,7 @@ fn leaf_pop() {
 #[test]
 fn internal_pop() {
     let mut t : CritBit<u8,()> = Internal (
-        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u32
     );
     assert_eq!( t.pop( &0u8 ), Some ( () ) );
     assert_eq!( t.len(), 1 );
