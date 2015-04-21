@@ -1,13 +1,9 @@
-
-#![crate_id = "critbit#0.0.0"]
-#![crate_type = "lib"]
-
 use std::num::Bitwise;
 
 pub enum CritBit<K,V> {
-    priv Leaf ( K, V ),
-    priv Internal ( [~CritBit<K,V>, ..2], K ),
-    priv Empty
+    Leaf ( K, V ),
+    Internal ( (Box<CritBit<K,V>>, Box<CritBit<K,V>>), K ),
+    Empty
 }
 
 #[inline(always)]
@@ -20,7 +16,7 @@ impl<K: Bitwise + Eq, V> Container for CritBit<K, V> {
         match *self {
             Empty => 0,
             Leaf ( .. ) => 1,
-            Internal( [ ref left, ref right ], _ ) => {
+            Internal( ( ref left, ref right ), _ ) => {
                 left.len() + right.len()
             }
         }
@@ -32,9 +28,9 @@ impl<K: Bitwise + Eq, V> Map<K,V> for CritBit<K,V> {
         match *self {
             Leaf ( ref k, ref v ) if *k == *key =>
                 Some( v ),
-            Internal ( [ ref left, _ ], ref crit ) if ! bit_at( key, crit ) =>
+            Internal ( ( ref left, _ ), ref crit ) if ! bit_at( key, crit ) =>
                 left.find( key ),
-            Internal ( [ _, ref right ], ref crit ) if   bit_at( key, crit ) =>
+            Internal ( ( _, ref right ), ref crit ) if   bit_at( key, crit ) =>
                 right.find( key ),
             _ => None
         }
@@ -60,9 +56,9 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
             Leaf ( ref k, ref mut v ) if *k == *key =>
                 Some( v ),
             Internal ( ref mut children, ref crit ) if ! bit_at( key, crit ) =>
-                children[0].find_mut( key ),
+                children.0.find_mut( key ),
             Internal ( ref mut children, ref crit ) if   bit_at( key, crit ) =>
-                children[1].find_mut( key ),
+                children.1.find_mut( key ),
             _ => None
         }
     }
@@ -71,9 +67,9 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
         let mut val = std::mem::replace( self, Empty );
         let ret = match val {
             Internal ( ref mut children, ref crit ) if ! bit_at( key, crit ) =>
-                children[0].pop( key ),
+                children.0.pop( key ),
             Internal ( ref mut children, ref crit ) if   bit_at( key, crit ) =>
-                children[1].pop( key ),
+                children.1.pop( key ),
             _ => None
         };
 
@@ -86,11 +82,11 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
                     None
                 }
             }
-            Internal ( [ ~Empty, ~kid ], _ ) => {
+            Internal ( ( &Empty, kid ), _ ) => {
                 std::mem::replace( self, kid );
                 ret
             },
-            Internal ( [ ~kid, ~Empty ], _ ) => {
+            Internal ( ( kid, &Empty ), _ ) => {
                 std::mem::replace( self, kid );
                 ret
             },
@@ -112,12 +108,12 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
                     Some( v )
                 } else if bit {
                     std::mem::replace( self, Internal (
-                        [ ~Leaf ( k, v ), ~Leaf ( key, value ) ], crit
+                        ( Box::new( Leaf ( k, v ) ), Box::new( Leaf ( key, value ) ) ), crit
                     ) );
                     None
                 } else {
                     std::mem::replace( self, Internal (
-                        [ ~Leaf ( key, value ), ~Leaf ( k, v ) ], crit
+                        ( Box::new( Leaf ( key, value ) ), Box::new( Leaf ( k, v ) ) ), crit
                     ) );
                     None
                 }
@@ -126,9 +122,9 @@ impl<K: Bitwise + Eq, V> MutableMap<K,V> for CritBit<K,V> {
                 std::mem::replace( self, val );
                 match *self {
                     Internal ( ref mut children, ref crit ) if ! bit_at( &key, crit ) =>
-                        children[0].swap( key, value ),
+                        children.0.swap( key, value ),
                     Internal ( ref mut children, ref crit ) if   bit_at( &key, crit ) =>
-                        children[1].swap( key, value ),
+                        children.1.swap( key, value ),
                     _ => None
                 }
 
@@ -197,7 +193,7 @@ fn leaf_find() {
 #[test]
 fn internal_len() {
     let t : CritBit<u8,()> = Internal (
-        [ ~Leaf ( 0u8, () ), ~Leaf ( 128u8, () ) ], 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
     );
     assert_eq!( t.len(), 2 );
 }
@@ -205,7 +201,7 @@ fn internal_len() {
 #[test]
 fn internal_contains_key() {
     let t : CritBit<u8,()> = Internal (
-        [ ~Leaf ( 0u8, () ), ~Leaf ( 128u8, () ) ], 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
     );
     assert_eq!( t.contains_key( &0u8 ), true );
     assert_eq!( t.contains_key( &128u8 ), true );
@@ -215,7 +211,7 @@ fn internal_contains_key() {
 #[test]
 fn internal_find() {
     let t : CritBit<u8,u8> = Internal (
-        [ ~Leaf ( 0u8, 1u8 ), ~Leaf ( 128u8, 1u8 ) ], 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
     );
     let val = 1u8;
     assert_eq!( t.find( &0u8 ), Some ( &val ) );
@@ -234,7 +230,7 @@ fn leaf_clear() {
 #[test]
 fn internal_clear() {
     let mut t : CritBit<u8,()> = Internal (
-        [ ~Leaf ( 0u8, () ), ~Leaf ( 128u8, () ) ], 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
     );
     assert_eq!( t.len(), 2 );
     t.clear();
@@ -269,7 +265,7 @@ fn leaf_find_mut() {
 #[test]
 fn internal_find_mut() {
     let mut t : CritBit<u8,u8> = Internal (
-        [ ~Leaf ( 0u8, 1u8 ), ~Leaf ( 128u8, 1u8 ) ], 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
     );
     let val = 7u8;
     {
@@ -315,7 +311,7 @@ fn leaf_swap_new() {
 #[test]
 fn internal_swap_new() {
     let mut t : CritBit<u8,u8> = Internal (
-        [ ~Leaf ( 0u8, 1u8 ), ~Leaf ( 128u8, 1u8 ) ], 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
     );
     let oldval = 1u8;
     let val = 7u8;
@@ -329,7 +325,7 @@ fn internal_swap_new() {
 #[test]
 fn internal_swap_exists() {
     let mut t : CritBit<u8,u8> = Internal (
-        [ ~Leaf ( 0u8, 1u8 ), ~Leaf ( 128u8, 1u8 ) ], 0u8
+        ( Box::new( Leaf ( 0u8, 1u8 ) ), Box::new( Leaf ( 128u8, 1u8 ) ) ), 0u8
     );
     let val = 7u8;
     assert_eq!( t.swap( 0u8, 7u8 ), Some ( 1u8 ) );
@@ -352,7 +348,7 @@ fn leaf_pop() {
 #[test]
 fn internal_pop() {
     let mut t : CritBit<u8,()> = Internal (
-        [ ~Leaf ( 0u8, () ), ~Leaf ( 128u8, () ) ], 0u8
+        ( Box::new( Leaf ( 0u8, () ) ), Box::new( Leaf ( 128u8, () ) ) ), 0u8
     );
     assert_eq!( t.pop( &0u8 ), Some ( () ) );
     assert_eq!( t.len(), 1 );
