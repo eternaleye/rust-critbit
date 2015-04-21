@@ -110,7 +110,7 @@ impl<K: PrimInt, V> CritBitNode<K, V> {
                         }, crit
                     ));
                 } else {
-                    unreachable!()
+                    unreachable!("We just checked that this was a leaf...")
                 }
                 None
             },
@@ -118,7 +118,7 @@ impl<K: PrimInt, V> CritBitNode<K, V> {
                 kid.insert( key, value ),
             CritBitNode::Internal ( ( _, Some( ref mut kid ) ), ref crit ) if   bit_at( &key, crit ) =>
                 kid.insert( key, value ),
-            _ => unreachable!()
+            _ => unreachable!("Internal nodes should always have both branches filled, what happened?")
         }
     }
 }
