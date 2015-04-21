@@ -1,20 +1,21 @@
-#![feature(core)]
+extern crate num;
+use num::PrimInt;
 
-use std::num::Int;
+use std::ops::Add;
 
-pub struct CritBit<K,V>( Option<CritBitNode<K,V>> ) where K: Int + Eq;
+pub struct CritBit<K,V>( Option<CritBitNode<K,V>> ) where K: PrimInt;
 
-pub enum CritBitNode<K,V> where K: Int + Eq {
+pub enum CritBitNode<K,V> where K: PrimInt {
     Leaf ( K, V ),
     Internal ( (Option<Box<CritBitNode<K,V>>>, Option<Box<CritBitNode<K,V>>>), u32 ),
 }
 
 #[inline(always)]
-fn bit_at<T: Int + Eq>( value: &T, pos: &u32 ) -> bool {
+fn bit_at<T: PrimInt>( value: &T, pos: &u32 ) -> bool {
     value.rotate_left(*pos).leading_zeros() == 0
 }
 
-impl<K,V> CritBit<K,V> where K: Int + Eq {
+impl<K,V> CritBit<K,V> where K: PrimInt {
     pub fn new() -> CritBit<K,V> {
         CritBit( None )
     }
@@ -24,7 +25,7 @@ impl<K,V> CritBit<K,V> where K: Int + Eq {
     }
 
     pub fn len( &self ) -> usize {
-        self.0.iter().map(CritBitNode::len).sum()
+        self.0.iter().map(CritBitNode::len).fold(0, Add::add)
     }
 
     pub fn get( &self, key: &K ) -> Option<&V> {
@@ -53,12 +54,12 @@ impl<K,V> CritBit<K,V> where K: Int + Eq {
     }
 }
 
-impl<K: Int + Eq, V> CritBitNode<K, V> {
+impl<K: PrimInt, V> CritBitNode<K, V> {
     fn len( &self ) -> usize {
         match *self {
             CritBitNode::Leaf ( .. ) => 1,
             CritBitNode::Internal( ( ref left, ref right ), _ ) => {
-                left.iter().chain(right.iter()).map(|x| x.len()).sum()
+                left.iter().chain(right.iter()).map(|x| x.len()).fold(0, Add::add)
             }
         }
     }
